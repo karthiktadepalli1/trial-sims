@@ -10,19 +10,26 @@ This tool helps you explore the tradeoff between funding additional clinical tri
 """)
 
 # --- User Inputs ---
-mean_top_N = st.sidebar.slider("Mean success rate among top N candidates", 0.01, 0.99, 0.4, 0.01)
+st.sidebar.header("Basic Parameters")
+mean_top_N = st.sidebar.slider("Mean success rate among candidates that reach clinical trials", 0.01, 0.99, 0.4, 0.01)
 N = st.sidebar.number_input("Number of clinical trial slots (N)", min_value=1, max_value=1000, value=100)
 m = st.sidebar.number_input("Number of candidate drugs (m)", min_value=N+1, max_value=100000, value=10000)
-runs = st.sidebar.number_input("Monte-Carlo replications per point", min_value=10, max_value=1000, value=100)
-seed = st.sidebar.number_input("Random seed", min_value=0, max_value=100000, value=42)
+
+st.sidebar.header("Main Comparison (Trials vs Candidates)")
+g_fixed_for_c = st.sidebar.number_input("Additional clinical trial slots for main comparison", min_value=1, max_value=100, value=5)
+percent_fixed_for_g = st.sidebar.number_input("% increase in candidate drugs for main comparison", min_value=1, max_value=1000, value=100)
+
+st.sidebar.header("Sweep Ranges")
 percent_min = st.sidebar.number_input("Minimum % increase in candidate drugs", min_value=1, max_value=1000, value=50)
 percent_max = st.sidebar.number_input("Maximum % increase in candidate drugs", min_value=percent_min+1, max_value=2000, value=400)
 percent_step = st.sidebar.number_input("Step for % increase", min_value=1, max_value=500, value=50)
-g_fixed_for_c = st.sidebar.number_input("Additional clinical trial slots for main comparison", min_value=1, max_value=100, value=5)
 g_min = st.sidebar.number_input("Minimum additional clinical trial slots", min_value=1, max_value=100, value=1)
 g_max = st.sidebar.number_input("Maximum additional clinical trial slots", min_value=g_min, max_value=100, value=10)
 g_step = st.sidebar.number_input("Step for additional clinical trial slots", min_value=1, max_value=20, value=1)
-percent_fixed_for_g = st.sidebar.number_input("% increase in candidate drugs for main comparison", min_value=1, max_value=1000, value=100)
+
+# Set fixed values for runs and seed
+runs = 100
+seed = 42
 
 # --- Helper functions ---
 def estimate_top_N_mean(alpha, beta_param, N, m, runs, rng):
