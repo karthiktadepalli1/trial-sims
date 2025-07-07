@@ -12,11 +12,11 @@ This tool helps you explore the tradeoff between funding additional clinical tri
 # --- User Inputs ---
 st.sidebar.header("Basic Parameters")
 mean_top_N = st.sidebar.slider("Mean success rate among candidates that reach clinical trials", 0.01, 0.99, 0.4, 0.01)
-N = st.sidebar.number_input("Number of clinical trial slots (N)", min_value=1, max_value=1000, value=100)
-m = st.sidebar.number_input("Number of candidate drugs (m)", min_value=N+1, max_value=100000, value=10000)
+N = st.sidebar.number_input("Number of clinical trial slots (N)", min_value=1, max_value=1000, value=10)
+m = st.sidebar.number_input("Number of candidate drugs (m)", min_value=N+1, max_value=100000, value=100)
 
 st.sidebar.header("Main Comparison (Trials vs Candidates)")
-g_fixed_for_c = st.sidebar.number_input("Additional clinical trial slots for main comparison", min_value=1, max_value=100, value=5)
+g_fixed_for_c = st.sidebar.number_input("Additional clinical trial slots for main comparison", min_value=1, max_value=100, value=1)
 percent_fixed_for_g = st.sidebar.number_input("% increase in candidate drugs for main comparison", min_value=1, max_value=1000, value=100)
 
 st.sidebar.header("Sweep Ranges")
@@ -40,6 +40,10 @@ def estimate_top_N_mean(alpha, beta_param, N, m, runs, rng):
     return np.mean(means)
 
 def find_beta_params_for_top_N_mean(target_mean, N, m, runs=100, seed=42):
+    """
+    Find beta (with alpha fixed at 1) such that the mean of the top N out of m Beta(1, beta) draws is close to target_mean.
+    Returns (alpha, beta)
+    """
     rng = np.random.default_rng(seed)
     alpha = 1.0
     def objective(beta_param):
@@ -47,8 +51,10 @@ def find_beta_params_for_top_N_mean(target_mean, N, m, runs=100, seed=42):
             return 1e6
         est_mean = estimate_top_N_mean(alpha, beta_param, N, m, runs, rng)
         return (est_mean - target_mean) ** 2
+    # Initial guess: mean = alpha/(alpha+beta), so try to match target_mean for the mean
     mean_guess = target_mean
     beta0 = (1 - mean_guess) / mean_guess
+    from scipy.optimize import minimize_scalar
     res = minimize_scalar(objective, bounds=(1e-3, 1e3), method='bounded')
     if not res.success:
         st.error(f"Could not find suitable beta: {res.message}")
@@ -93,7 +99,14 @@ def estimate_expected_successes(alpha, beta_param, m, N, runs, rng):
 st.header("Distribution of Drug Success Probabilities")
 alpha, beta_param = find_beta_params_for_top_N_mean(mean_top_N, N, m, runs=50, seed=seed)
 mean_prob = alpha / (alpha + beta_param)
+frac_50_plus = 1 - beta.cdf(0.5, alpha, beta_param)
 frac_80 = 1 - beta.cdf(0.8, alpha, beta_param)
+
+st.markdown(f"""
+The beta distribution is commonly used to model probabilities, so I use it here to represent the distribution of candidate drug probabilities of success.
+The distribution is calibrated based on the assumption that when there are **{N} clinical trials** run on the best out of **{m} candidate drugs**, the success rate in those trials is **{100*mean_top_N:.0f}%.**
+If you would like to change these assumptions, use the sliders to the left.
+""")
 
 x = np.linspace(0, 1, 500)
 pdf = beta.pdf(x, alpha, beta_param)
@@ -106,9 +119,9 @@ ax_pdf.legend()
 st.pyplot(fig_pdf)
 
 st.markdown(f"""
-- **Average candidate drug has a {100*mean_prob:.1f}% chance of success.**
-- **Only {100*frac_80:.2f}% of candidate drugs have an 80% or higher chance of success.**
-- **By design, the average success rate among the top {N} out of {m} candidates is {100*mean_top_N:.1f}%.**
+Here are some facts about this distribution to see if it matches your intuitions, so that you can recalibrate if it doesn't:
+- **Average candidate drug has a {100*mean_prob:.0f}% chance of success.**
+- **{100*frac_50_plus:.1f}% of candidate drugs have a >50% chance of success.**
 """)
 
 # --- k vs % increase in candidate drugs ---
@@ -160,7 +173,8 @@ st.pyplot(fig2)
 # --- Expected number of successful drugs vs % increase in candidates ---
 st.header("Expected Number of Successful Drugs vs. Number of Candidates")
 st.markdown(f"""
-This plot shows how the expected number of successful drugs changes as you increase the number of candidate drugs (by a given percentage), holding the number of clinical trial slots fixed at {N}.
+This plot shows how the expected number of successful drugs changes as you increase the number of candidate drugs (by a given percentage), holding the number of clinical trial slots fixed at {N}. 
+In other words, it shows how the marginal returns to funding clinical trials declines as we fund more and more of them.
 """)
 success_means = []
 success_ses = []
@@ -180,6 +194,7 @@ st.pyplot(fig3)
 st.header("Expected Number of Successful Drugs vs. Number of Clinical Trial Slots")
 st.markdown(f"""
 This plot shows how the expected number of successful drugs changes as you increase the number of clinical trial slots, holding the number of candidate drugs fixed at {m}.
+In other words, it shows how the marginal returns to funding candidate generation declines as we fund more and more candidate generation opportunities.
 """)
 success_means = []
 success_ses = []
