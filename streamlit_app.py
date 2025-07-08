@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import beta
 from scipy.optimize import minimize_scalar
 
-st.title("Drug Trial Resource Allocation Simulator")
+st.title("Drug R&D Resource Allocation")
 st.markdown("""
 This tool helps you explore the tradeoff between funding additional clinical trial slots and screening more candidate drugs. Adjust the parameters below to see how the expected number of successful drugs changes under different resource allocation strategies.
 """)
@@ -26,6 +26,9 @@ log2_step = 1
 g_min = st.sidebar.number_input("Minimum additional clinical trial slots", min_value=0, max_value=100, value=0)
 g_max = st.sidebar.number_input("Maximum additional clinical trial slots", min_value=g_min, max_value=100, value=10)
 g_step = 1
+
+st.sidebar.header("Cost Parameters")
+cost_per_trial = st.sidebar.number_input("Cost per clinical trial ($)", min_value=100_000, max_value=10_000_000, value=600_000, step=10_000, format="%d")
 
 # Set fixed values for runs and seed
 runs = 100
@@ -123,52 +126,6 @@ Here are some facts about this distribution to see if it matches your intuitions
 - **{100*frac_50_plus:.2f}% of candidate drugs have a >50% chance of success.**
 """)
 
-# --- k vs log2 increase in candidate drugs ---
-st.header("Comparing Additional Clinical Trials vs. Additional Drug Candidates")
-st.markdown(f"""
-This plot compares two ways to increase the expected number of successful drugs:
-- **Funding more clinical trial slots** (adding {g_fixed_for_c} slots)
-- **Screening more candidate drugs** (increasing the number of candidates by a given number of doublings)
-
-The y-axis shows the ratio of the expected increase in successful drugs from funding more trials to the expected increase from screening more candidates. A value above 1 means funding more trials is more effective; below 1 means screening more candidates is more effective.
-""")
-log2_vals = np.arange(log2_min, log2_max+1, log2_step)
-k_means = []
-k_ses = []
-for log2_inc in log2_vals:
-    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), log2_inc, g_fixed_for_c)
-    k_means.append(k_mean)
-    k_ses.append(k_se)
-fig1, ax1 = plt.subplots(figsize=(7, 4))
-ax1.errorbar(log2_vals, k_means, yerr=k_ses, fmt='o-', capsize=4)
-ax1.axhline(1, color='gray', linestyle='--')
-ax1.set_xlabel('Doublings in number of candidate drugs')
-ax1.set_ylabel('Relative value: more trials vs. more candidates')
-ax1.set_title(f"Effectiveness of adding {g_fixed_for_c} clinical trial slots vs. more candidates")
-st.pyplot(fig1)
-
-# --- k vs additional clinical trial slots ---
-st.header("Comparing Additional Drug Candidates vs. Additional Clinical Trials")
-st.markdown(f"""
-This plot compares the same tradeoff, but now for a fixed log2 increase in candidate drugs (here, {log2_fixed_for_g} = {2**log2_fixed_for_g}x), as you vary the number of additional clinical trial slots.
-
-The y-axis is interpreted as above.
-""")
-g_vals = np.arange(g_min, g_max + 1, g_step)
-k_means = []
-k_ses = []
-for g in g_vals:
-    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), log2_fixed_for_g, g)
-    k_means.append(k_mean)
-    k_ses.append(k_se)
-fig2, ax2 = plt.subplots(figsize=(7, 4))
-ax2.errorbar(g_vals, k_means, yerr=k_ses, fmt='o-', capsize=4)
-ax2.axhline(1, color='gray', linestyle='--')
-ax2.set_xlabel('Number of additional clinical trial slots')
-ax2.set_ylabel('Relative value: more trials vs. more candidates')
-ax2.set_title(f"Effectiveness of adding more clinical trial slots vs. {2**log2_fixed_for_g}x more candidates")
-st.pyplot(fig2)
-
 # --- Expected number of successful drugs vs log2 increase in candidates ---
 st.header("Expected Number of Successful Drugs vs. Number of Candidates")
 st.markdown(f"""
@@ -176,7 +133,7 @@ This plot shows how the expected number of successful drugs changes as you incre
 """)
 success_means = []
 success_ses = []
-log2_increases = np.arange(0, log2_max + 1)
+log2_increases = np.arange(log2_min, log2_max+1, log2_step)
 m_vals = [int(m * 2**log2_inc) for log2_inc in log2_increases]
 baseline_mean, baseline_se = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
 for m_val in m_vals:
@@ -201,6 +158,7 @@ In other words, it shows how the marginal returns to funding candidate generatio
 """)
 success_means = []
 success_ses = []
+g_vals = np.arange(g_min, g_max + 1, g_step)
 N_vals = [N + g for g in g_vals]
 baseline_mean, baseline_se = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
 for N_val in N_vals:
@@ -212,4 +170,39 @@ ax4.errorbar(g_vals, success_means, yerr=success_ses, fmt='o-', capsize=4)
 ax4.set_xlabel('Number of additional clinical trial slots')
 ax4.set_ylabel('Increase in expected number of successful drugs')
 ax4.set_title(f'Increase in expected successful drugs vs. additional clinical trial slots (m={m})')
-st.pyplot(fig4) 
+st.pyplot(fig4)
+
+# --- Cost-Effectiveness Comparison Section ---
+st.header("Cost-Effectiveness: Clinical Trials vs. Candidate Generation")
+
+# 1. Additional drugs per clinical trial (from 0 to 1 extra trial)
+mean_0, se_0 = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
+mean_1, se_1 = estimate_expected_successes(alpha, beta_param, m, N+1, runs, np.random.default_rng(seed))
+drugs_per_trial = mean_1 - mean_0
+
+# 2. Additional drugs per doubling in candidates (from 0 to 1 doubling)
+mean_0c, se_0c = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
+mean_1c, se_1c = estimate_expected_successes(alpha, beta_param, m*2, N, runs, np.random.default_rng(seed))
+drugs_per_doubling = mean_1c - mean_0c
+
+# 3. Number of clinical trials needed to equal 1 doubling in candidates
+if drugs_per_trial > 0:
+    trials_needed = drugs_per_doubling / drugs_per_trial
+else:
+    trials_needed = float('inf')
+
+# 4. Cost of those clinical trials
+cost_to_match_doubling = trials_needed * cost_per_trial
+
+st.markdown(f"""
+**Summary of Marginal Returns:**
+- **Additional drugs per clinical trial (from 0 to 1 extra):** {drugs_per_trial:.3f}
+- **Additional drugs per doubling in candidates (from 0 to 1 doubling):** {drugs_per_doubling:.3f}
+- **Number of clinical trials needed to equal 1 doubling of candidates:** {trials_needed:.2f}
+- **Cost of those clinical trials:** ${cost_to_match_doubling:,.0f}
+""")
+
+st.markdown(f"""
+**Conclusion:**
+Funding clinical trials is **better** than funding candidate generation if and only if the cost to double the number of candidates is **greater than ${cost_to_match_doubling:,.0f}**.
+""") 
