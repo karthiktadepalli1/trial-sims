@@ -28,7 +28,7 @@ g_max = st.sidebar.number_input("Maximum additional clinical trial slots", min_v
 g_step = 1
 
 st.sidebar.header("Cost Parameters")
-cost_per_trial = st.sidebar.number_input("Cost per clinical trial ($)", min_value=100_000, max_value=10_000_000, value=600_000, step=10_000, format="%d")
+cost_per_trial = st.sidebar.number_input("Cost per clinical trial ($)", min_value=100000, max_value=10000000, value=1000000, step=10000, format="%d")
 
 # Set fixed values for runs and seed
 runs = 100
