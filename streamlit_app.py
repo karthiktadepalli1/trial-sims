@@ -11,21 +11,21 @@ This tool helps you explore the tradeoff between funding additional clinical tri
 
 # --- User Inputs ---
 st.sidebar.header("Basic Parameters")
-mean_top_N = st.sidebar.slider("Mean success rate among candidates that reach clinical trials", 0.01, 0.99, 0.4, 0.01)
+mean_top_N = st.sidebar.slider("Mean success rate among candidates that reach clinical trials", 0.01, 0.99, 0.2, 0.01)
 N = st.sidebar.number_input("Number of clinical trial slots (N)", min_value=1, max_value=1000, value=10)
 m = st.sidebar.number_input("Number of candidate drugs (m)", min_value=N+1, max_value=100000, value=100)
 
 st.sidebar.header("Main Comparison (Trials vs Candidates)")
 g_fixed_for_c = st.sidebar.number_input("Additional clinical trial slots for main comparison", min_value=1, max_value=100, value=1)
-percent_fixed_for_g = st.sidebar.number_input("% increase in candidate drugs for main comparison", min_value=1, max_value=1000, value=100)
+log2_fixed_for_g = st.sidebar.number_input("log2 increase in candidate drugs for main comparison (e.g. 1 = 2x, 2 = 4x)", min_value=1, max_value=6, value=1)
 
 st.sidebar.header("Sweep Ranges")
-percent_min = st.sidebar.number_input("Minimum % increase in candidate drugs", min_value=1, max_value=1000, value=50)
-percent_max = st.sidebar.number_input("Maximum % increase in candidate drugs", min_value=percent_min+1, max_value=2000, value=400)
-percent_step = st.sidebar.number_input("Step for % increase", min_value=1, max_value=500, value=50)
-g_min = st.sidebar.number_input("Minimum additional clinical trial slots", min_value=1, max_value=100, value=1)
+log2_min = st.sidebar.number_input("Minimum doublings in candidate drugs", min_value=0, max_value=6, value=0)
+log2_max = st.sidebar.number_input("Maximum doublings in candidate drugs", min_value=log2_min, max_value=6, value=4)
+log2_step = 1
+g_min = st.sidebar.number_input("Minimum additional clinical trial slots", min_value=0, max_value=100, value=0)
 g_max = st.sidebar.number_input("Maximum additional clinical trial slots", min_value=g_min, max_value=100, value=10)
-g_step = st.sidebar.number_input("Step for additional clinical trial slots", min_value=1, max_value=20, value=1)
+g_step = 1
 
 # Set fixed values for runs and seed
 runs = 100
@@ -67,9 +67,8 @@ def draw_candidates(alpha, beta_param, m, rng):
 def social_value(draws, N):
     return np.sum(np.partition(draws, -N)[-N:])
 
-def estimate_k(alpha, beta_param, m, N, runs, rng, percent_increase, g):
-    c = 1 + percent_increase / 100.0
-    m_c = int(np.ceil(c * m))
+def estimate_k(alpha, beta_param, m, N, runs, rng, log2_increase, g):
+    m_c = int(np.ceil(m * 2**log2_increase))
     if m_c <= m:
         m_c = m + 1
     k_vals = np.empty(runs)
@@ -121,29 +120,29 @@ st.pyplot(fig_pdf)
 st.markdown(f"""
 Here are some facts about this distribution to see if it matches your intuitions, so that you can recalibrate if it doesn't:
 - **Average candidate drug has a {100*mean_prob:.0f}% chance of success.**
-- **{100*frac_50_plus:.1f}% of candidate drugs have a >50% chance of success.**
+- **{100*frac_50_plus:.2f}% of candidate drugs have a >50% chance of success.**
 """)
 
-# --- k vs % increase in candidate drugs ---
+# --- k vs log2 increase in candidate drugs ---
 st.header("Comparing Additional Clinical Trials vs. Additional Drug Candidates")
 st.markdown(f"""
 This plot compares two ways to increase the expected number of successful drugs:
 - **Funding more clinical trial slots** (adding {g_fixed_for_c} slots)
-- **Screening more candidate drugs** (increasing the number of candidates by a given percentage)
+- **Screening more candidate drugs** (increasing the number of candidates by a given number of doublings)
 
 The y-axis shows the ratio of the expected increase in successful drugs from funding more trials to the expected increase from screening more candidates. A value above 1 means funding more trials is more effective; below 1 means screening more candidates is more effective.
 """)
-percent_vals = np.arange(percent_min, percent_max+1, percent_step)
+log2_vals = np.arange(log2_min, log2_max+1, log2_step)
 k_means = []
 k_ses = []
-for percent in percent_vals:
-    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), percent, g_fixed_for_c)
+for log2_inc in log2_vals:
+    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), log2_inc, g_fixed_for_c)
     k_means.append(k_mean)
     k_ses.append(k_se)
 fig1, ax1 = plt.subplots(figsize=(7, 4))
-ax1.errorbar(percent_vals, k_means, yerr=k_ses, fmt='o-', capsize=4)
+ax1.errorbar(log2_vals, k_means, yerr=k_ses, fmt='o-', capsize=4)
 ax1.axhline(1, color='gray', linestyle='--')
-ax1.set_xlabel('% increase in number of candidate drugs')
+ax1.set_xlabel('Doublings in number of candidate drugs')
 ax1.set_ylabel('Relative value: more trials vs. more candidates')
 ax1.set_title(f"Effectiveness of adding {g_fixed_for_c} clinical trial slots vs. more candidates")
 st.pyplot(fig1)
@@ -151,7 +150,7 @@ st.pyplot(fig1)
 # --- k vs additional clinical trial slots ---
 st.header("Comparing Additional Drug Candidates vs. Additional Clinical Trials")
 st.markdown(f"""
-This plot compares the same tradeoff, but now for a fixed % increase in candidate drugs (here, {percent_fixed_for_g}%), as you vary the number of additional clinical trial slots.
+This plot compares the same tradeoff, but now for a fixed log2 increase in candidate drugs (here, {log2_fixed_for_g} = {2**log2_fixed_for_g}x), as you vary the number of additional clinical trial slots.
 
 The y-axis is interpreted as above.
 """)
@@ -159,7 +158,7 @@ g_vals = np.arange(g_min, g_max + 1, g_step)
 k_means = []
 k_ses = []
 for g in g_vals:
-    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), percent_fixed_for_g, g)
+    k_mean, k_se = estimate_k(alpha, beta_param, m, N, runs, np.random.default_rng(seed), log2_fixed_for_g, g)
     k_means.append(k_mean)
     k_ses.append(k_se)
 fig2, ax2 = plt.subplots(figsize=(7, 4))
@@ -167,27 +166,31 @@ ax2.errorbar(g_vals, k_means, yerr=k_ses, fmt='o-', capsize=4)
 ax2.axhline(1, color='gray', linestyle='--')
 ax2.set_xlabel('Number of additional clinical trial slots')
 ax2.set_ylabel('Relative value: more trials vs. more candidates')
-ax2.set_title(f"Effectiveness of adding more clinical trial slots vs. {percent_fixed_for_g}% more candidates")
+ax2.set_title(f"Effectiveness of adding more clinical trial slots vs. {2**log2_fixed_for_g}x more candidates")
 st.pyplot(fig2)
 
-# --- Expected number of successful drugs vs % increase in candidates ---
+# --- Expected number of successful drugs vs log2 increase in candidates ---
 st.header("Expected Number of Successful Drugs vs. Number of Candidates")
 st.markdown(f"""
-This plot shows how the expected number of successful drugs changes as you increase the number of candidate drugs (by a given percentage), holding the number of clinical trial slots fixed at {N}. 
-In other words, it shows how the marginal returns to funding clinical trials declines as we fund more and more of them.
+This plot shows how the expected number of successful drugs changes as you increase the number of candidate drugs by doubling, quadrupling, etc., holding the number of clinical trial slots fixed at {N}.
 """)
 success_means = []
 success_ses = []
-m_vals = [int((1 + percent/100.0) * m) for percent in percent_vals]
+log2_increases = np.arange(0, log2_max + 1)
+m_vals = [int(m * 2**log2_inc) for log2_inc in log2_increases]
+baseline_mean, baseline_se = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
 for m_val in m_vals:
     mean, se = estimate_expected_successes(alpha, beta_param, m_val, N, runs, np.random.default_rng(seed))
-    success_means.append(mean)
+    success_means.append(mean - baseline_mean)
     success_ses.append(se)
 fig3, ax3 = plt.subplots(figsize=(7, 4))
-ax3.errorbar(percent_vals, success_means, yerr=success_ses, fmt='o-', capsize=4)
-ax3.set_xlabel('% increase in number of candidate drugs')
-ax3.set_ylabel('Expected number of successful drugs')
-ax3.set_title(f'Expected number of successful drugs vs. % increase in candidates (N={N})')
+ax3.errorbar(log2_increases, success_means, yerr=success_ses, fmt='o-', capsize=4)
+ax3.set_xlabel('Doublings in number of candidate drugs')
+ax3.set_ylabel('Increase in expected number of successful drugs')
+ax3.set_title(f'Increase in expected successful drugs vs. log2 increase in candidates (N={N})')
+# Set x-ticks at integer log2 values, with labels like "1x", "2x", "4x", ...
+ax3.set_xticks(log2_increases)
+ax3.set_xticklabels([f"{2**int(x):d}x" for x in log2_increases])
 st.pyplot(fig3)
 
 # --- Expected number of successful drugs vs additional clinical trial slots ---
@@ -199,13 +202,14 @@ In other words, it shows how the marginal returns to funding candidate generatio
 success_means = []
 success_ses = []
 N_vals = [N + g for g in g_vals]
+baseline_mean, baseline_se = estimate_expected_successes(alpha, beta_param, m, N, runs, np.random.default_rng(seed))
 for N_val in N_vals:
     mean, se = estimate_expected_successes(alpha, beta_param, m, N_val, runs, np.random.default_rng(seed))
-    success_means.append(mean)
-    success_ses.append(se)
+    success_means.append(mean - baseline_mean)
+    success_ses.append(se)  # Standard error of the difference
 fig4, ax4 = plt.subplots(figsize=(7, 4))
 ax4.errorbar(g_vals, success_means, yerr=success_ses, fmt='o-', capsize=4)
 ax4.set_xlabel('Number of additional clinical trial slots')
-ax4.set_ylabel('Expected number of successful drugs')
-ax4.set_title(f'Expected number of successful drugs vs. additional clinical trial slots (m={m})')
+ax4.set_ylabel('Increase in expected number of successful drugs')
+ax4.set_title(f'Increase in expected successful drugs vs. additional clinical trial slots (m={m})')
 st.pyplot(fig4) 
